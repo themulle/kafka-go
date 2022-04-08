@@ -337,6 +337,7 @@ to use in most cases as it provides additional features:
 - Synchronous or asynchronous writes of messages to Kafka.
 - Asynchronous cancellation using contexts.
 - Flushing of pending messages on close to support graceful shutdowns.
+- Creation of a missing topic before publishing a message. *Note!* it was the default behaviour up to the version `v0.4.30`.
 
 ```go
 // make a writer that produces to topic-A, using the least-bytes distribution
@@ -362,6 +363,55 @@ err := w.WriteMessages(context.Background(),
 )
 if err != nil {
     log.Fatal("failed to write messages:", err)
+}
+
+if err := w.Close(); err != nil {
+    log.Fatal("failed to close writer:", err)
+}
+```
+
+### Missing topic creation before publication
+
+```go
+// Make a writer that publishes messages to topic-A.
+// The topic will be created if it is missing.
+w := &Writer{
+    Addr:                   TCP("localhost:9092"),
+    Topic:                  "topic-A",
+    AllowAutoTopicCreation: true,
+}
+
+messages := []kafka.Message{
+    {
+        Key:   []byte("Key-A"),
+        Value: []byte("Hello World!"),
+    },
+    {
+        Key:   []byte("Key-B"),
+        Value: []byte("One!"),
+    },
+    {
+        Key:   []byte("Key-C"),
+        Value: []byte("Two!"),
+    },
+}
+
+var err error
+const retries = 3
+for i := 0; i < retries; i++ {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    
+    // attempt to create topic prior to publishing the message
+    err = w.WriteMessages(ctx, messages...)
+    if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
+        time.Sleep(time.Millisecond * 250)
+        continue
+    }
+
+    if err != nil {
+        log.Fatalf("unexpected error %v", err)
+    }
 }
 
 if err := w.Close(); err != nil {
@@ -480,6 +530,8 @@ longer the case and import of the compression packages are now no-ops._
 ## TLS Support
 
 For a bare bones Conn type or in the Reader/Writer configs you can specify a dialer option for TLS support. If the TLS field is nil, it will not connect with TLS.
+*Note:* Connecting to a Kafka cluster with TLS enabled without configuring TLS on the Conn/Reader/Writer can manifest in opaque io.ErrUnexpectedEOF errors.
+
 
 ### Connection
 
@@ -512,6 +564,8 @@ r := kafka.NewReader(kafka.ReaderConfig{
 
 ### Writer
 
+Using `kafka.NewWriter`
+
 ```go
 dialer := &kafka.Dialer{
     Timeout:   10 * time.Second,
@@ -525,6 +579,20 @@ w := kafka.NewWriter(kafka.WriterConfig{
 	Balancer: &kafka.Hash{},
 	Dialer:   dialer,
 })
+```
+
+Direct Writer creation
+
+```go
+w := kafka.Writer{
+        Addr: kafka.TCP("localhost:9093"),
+	    Topic:   "topic-A",
+	    Balancer: &kafka.Hash{},
+        Transport: &kafka.Transport{
+            TLS: &tls.Config{},
+        },
+    }
+
 ```
 
 ## SASL Support
@@ -668,6 +736,47 @@ if err := r.Close(); err != nil {
     log.Fatal("failed to close reader:", err)
 }
 ```
+
+
+## Logging
+
+For visiblity into the operations of the Reader/Writer types, configure a logger on creation.
+
+
+### Reader
+
+```go
+func logf(msg string, a ...interface{}) {
+	fmt.Printf(msg, a...)
+	fmt.Println()
+}
+
+r := kafka.NewReader(kafka.ReaderConfig{
+	Brokers:     []string{"localhost:9092"},
+	Topic:       "my-topic1",
+	Partition:   0,
+	Logger:      kafka.LoggerFunc(logf),
+	ErrorLogger: kafka.LoggerFunc(logf),
+})
+```
+
+### Writer
+
+```go
+func logf(msg string, a ...interface{}) {
+	fmt.Printf(msg, a...)
+	fmt.Println()
+}
+
+w := &kafka.Writer{
+	Addr:        kafka.TCP("localhost:9092"),
+	Topic:       "topic",
+	Logger:      kafka.LoggerFunc(logf),
+	ErrorLogger: kafka.LoggerFunc(logf),
+}
+```
+
+
 
 ## Testing
 

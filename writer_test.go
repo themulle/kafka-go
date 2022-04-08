@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/segmentio/kafka-go/sasl/plain"
 )
 
 func TestBatchQueue(t *testing.T) {
@@ -159,6 +161,14 @@ func TestWriter(t *testing.T) {
 		{
 			scenario: "writing a message to a non-existant topic creates the topic",
 			function: testWriterAutoCreateTopic,
+		},
+		{
+			scenario: "terminates on an attempt to write a message to a nonexistent topic",
+			function: testWriterTerminateMissingTopic,
+		},
+		{
+			scenario: "writing a message with SASL Plain authentication",
+			function: testWriterSasl,
 		},
 	}
 
@@ -407,7 +417,7 @@ func readPartition(topic string, partition int, offset int64) (msgs []Message, e
 		var msg Message
 
 		if msg, err = batch.ReadMessage(); err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				err = nil
 			}
 			return
@@ -712,6 +722,75 @@ func testWriterAutoCreateTopic(t *testing.T) {
 		Topic:    topic,
 		Balancer: &RoundRobin{},
 	})
+	w.AllowAutoTopicCreation = true
+	defer w.Close()
+
+	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
+
+	var err error
+	const retries = 5
+	for i := 0; i < retries; i++ {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		err = w.WriteMessages(ctx, msg)
+		if errors.Is(err, LeaderNotAvailable) || errors.Is(err, context.DeadlineExceeded) {
+			time.Sleep(time.Millisecond * 250)
+			continue
+		}
+
+		if err != nil {
+			t.Errorf("unexpected error %v", err)
+			return
+		}
+	}
+	if err != nil {
+		t.Errorf("unable to create topic %v", err)
+	}
+}
+
+func testWriterTerminateMissingTopic(t *testing.T) {
+	topic := makeTopic()
+
+	transport := &Transport{}
+	defer transport.CloseIdleConnections()
+
+	writer := &Writer{
+		Addr:                   TCP("localhost:9092"),
+		Topic:                  topic,
+		Balancer:               &RoundRobin{},
+		RequiredAcks:           RequireNone,
+		AllowAutoTopicCreation: false,
+		Transport:              transport,
+	}
+	defer writer.Close()
+
+	msg := Message{Value: []byte("FooBar")}
+
+	if err := writer.WriteMessages(context.Background(), msg); err == nil {
+		t.Fatal("Kafka error [3] UNKNOWN_TOPIC_OR_PARTITION is expected")
+		return
+	}
+}
+
+func testWriterSasl(t *testing.T) {
+	topic := makeTopic()
+	defer deleteTopic(t, topic)
+	dialer := &Dialer{
+		Timeout: 10 * time.Second,
+		SASLMechanism: plain.Mechanism{
+			Username: "adminplain",
+			Password: "admin-secret",
+		},
+	}
+
+	w := newTestWriter(WriterConfig{
+		Dialer:  dialer,
+		Topic:   topic,
+		Brokers: []string{"localhost:9093"},
+	})
+
+	w.AllowAutoTopicCreation = true
+
 	defer w.Close()
 
 	msg := Message{Key: []byte("key"), Value: []byte("Hello World")}
