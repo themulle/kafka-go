@@ -47,8 +47,8 @@ func testBatchQueuePutWakesSleepingGetter(t *testing.T) {
 	var wg sync.WaitGroup
 	ready := make(chan struct{})
 	var batch *writeBatch
+	wg.Add(1)
 	go func() {
-		wg.Add(1)
 		defer wg.Done()
 		close(ready)
 		batch = bq.Get()
@@ -359,8 +359,9 @@ func testWriterMaxBytes(t *testing.T) {
 		t.Error("expected error")
 		return
 	} else if err != nil {
-		switch e := err.(type) {
-		case MessageTooLargeError:
+		var e MessageTooLargeError
+		switch {
+		case errors.As(err, &e):
 			if string(e.Message.Value) != string(firstMsg) {
 				t.Errorf("unxpected returned message. Expected: %s, Got %s", firstMsg, e.Message.Value)
 				return
@@ -373,6 +374,7 @@ func testWriterMaxBytes(t *testing.T) {
 				t.Errorf("unxpected returned message. Expected: %s, Got %s", secondMsg, e.Message.Value)
 				return
 			}
+
 		default:
 			t.Errorf("unexpected error: %s", err)
 			return

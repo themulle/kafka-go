@@ -3,6 +3,7 @@ package kafka
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"io/ioutil"
 	"math"
 	"reflect"
@@ -49,7 +50,7 @@ func TestReadVarIntFailing(t *testing.T) {
 	testCase := []byte{135, 135}
 	rd := bufio.NewReader(bytes.NewReader(testCase))
 	_, err := readVarInt(rd, len(testCase), &v)
-	if err != errShortRead {
+	if !errors.Is(err, errShortRead) {
 		t.Errorf("Expected error while parsing var int: %v", err)
 	}
 }
@@ -146,6 +147,9 @@ func TestReadNewBytes(t *testing.T) {
 		if len(b) > 0 {
 			t.Error("not all bytes were consumed")
 		}
+		if err != nil {
+			t.Error("should not have errored during peek")
+		}
 	})
 
 	t.Run("discards bytes when insufficient", func(t *testing.T) {
@@ -157,12 +161,15 @@ func TestReadNewBytes(t *testing.T) {
 		if remain != 0 {
 			t.Error("all bytes should have been consumed")
 		}
-		if err != errShortRead {
+		if !errors.Is(err, errShortRead) {
 			t.Error("should have returned errShortRead")
 		}
 		b, err = r.Peek(0)
 		if len(b) > 0 {
 			t.Error("not all bytes were consumed")
+		}
+		if err != nil {
+			t.Error("should not have errored during peek")
 		}
 	})
 }

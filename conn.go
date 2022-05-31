@@ -249,7 +249,7 @@ func (c *Conn) Broker() Broker {
 	}
 }
 
-// Controller requests kafka for the current controller and returns its URL
+// Controller requests kafka for the current controller and returns its URL.
 func (c *Conn) Controller() (broker Broker, err error) {
 	err = c.readOperation(
 		func(deadline time.Time, id int32) error {
@@ -276,7 +276,7 @@ func (c *Conn) Controller() (broker Broker, err error) {
 	return broker, err
 }
 
-// Brokers retrieve the broker list from the Kafka metadata
+// Brokers retrieve the broker list from the Kafka metadata.
 func (c *Conn) Brokers() ([]Broker, error) {
 	var brokers []Broker
 	err := c.readOperation(
@@ -1221,12 +1221,6 @@ func (c *Conn) SetRequiredAcks(n int) error {
 	}
 }
 
-func (c *Conn) writeRequestHeader(apiKey apiKey, apiVersion apiVersion, correlationID int32, size int32) {
-	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
-	hdr.Size = (hdr.size() + size) - 4
-	hdr.writeTo(&c.wb)
-}
-
 func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID int32, req request) error {
 	hdr := c.requestHeader(apiKey, apiVersion, correlationID)
 	hdr.Size = (hdr.size() + req.size()) - 4
@@ -1237,11 +1231,10 @@ func (c *Conn) writeRequest(apiKey apiKey, apiVersion apiVersion, correlationID 
 
 func (c *Conn) readResponse(size int, res interface{}) error {
 	size, err := read(&c.rbuf, size, res)
-	switch err.(type) {
-	case Error:
-		var e error
-		if size, e = discardN(&c.rbuf, size, size); e != nil {
-			err = e
+	if err != nil {
+		var kafkaError Error
+		if errors.As(err, &kafkaError) {
+			size, err = discardN(&c.rbuf, size, size)
 		}
 	}
 	return expectZeroSize(size, err)
@@ -1300,9 +1293,8 @@ func (c *Conn) do(d *connDeadline, write func(time.Time, int32) error, read func
 	}
 
 	if err = read(deadline, size); err != nil {
-		switch err.(type) {
-		case Error:
-		default:
+		var kafkaError Error
+		if !errors.As(err, &kafkaError) {
 			c.conn.Close()
 		}
 	}

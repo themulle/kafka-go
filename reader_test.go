@@ -89,7 +89,7 @@ func testReaderReadCanceled(t *testing.T, ctx context.Context, r *Reader) {
 	ctx, cancel := context.WithCancel(ctx)
 	cancel()
 
-	if _, err := r.ReadMessage(ctx); err != context.Canceled {
+	if _, err := r.ReadMessage(ctx); !errors.Is(err, context.Canceled) {
 		t.Error(err)
 	}
 }
@@ -259,7 +259,7 @@ func testReaderOutOfRangeGetsCanceled(t *testing.T, ctx context.Context, r *Read
 	}
 
 	_, err := r.ReadMessage(ctx)
-	if err != context.DeadlineExceeded {
+	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Error("bad error:", err)
 	}
 
@@ -305,15 +305,12 @@ func createTopic(t *testing.T, topic string, partitions int) {
 		},
 		Timeout: milliseconds(time.Second),
 	})
-	switch err {
-	case nil:
-		// ok
-	case TopicAlreadyExists:
-		// ok
-	default:
-		err = fmt.Errorf("creaetTopic, conn.createtTopics: %w", err)
-		t.Error(err)
-		t.FailNow()
+	if err != nil {
+		if !errors.Is(err, TopicAlreadyExists) {
+			err = fmt.Errorf("creaetTopic, conn.createtTopics: %w", err)
+			t.Error(err)
+			t.FailNow()
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -322,7 +319,7 @@ func createTopic(t *testing.T, topic string, partitions int) {
 	waitForTopic(ctx, t, topic)
 }
 
-// Block until topic exists
+// Block until topic exists.
 func waitForTopic(ctx context.Context, t *testing.T, topic string) {
 	t.Helper()
 
@@ -664,7 +661,7 @@ func testConsumerGroupSimple(t *testing.T, ctx context.Context, r *Reader) {
 
 func TestReaderSetOffsetWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
-	if err := r.SetOffset(LastOffset); err != errNotAvailableWithGroup {
+	if err := r.SetOffset(LastOffset); !errors.Is(err, errNotAvailableWithGroup) {
 		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
 	}
 }
@@ -687,7 +684,7 @@ func TestReaderReadLagReturnsZeroLagWhenConsumerGroupsEnabled(t *testing.T) {
 	r := &Reader{config: ReaderConfig{GroupID: "not-zero"}}
 	lag, err := r.ReadLag(context.Background())
 
-	if err != errNotAvailableWithGroup {
+	if !errors.Is(err, errNotAvailableWithGroup) {
 		t.Fatalf("expected %v; got %v", errNotAvailableWithGroup, err)
 	}
 
@@ -951,7 +948,7 @@ func testReaderConsumerGroupVerifyPeriodicOffsetCommitter(t *testing.T, ctx cont
 	if err := r.CommitMessages(ctx, m); err != nil {
 		t.Errorf("bad commit message: %v", err)
 	}
-	if elapsed := time.Now().Sub(started); elapsed > 10*time.Millisecond {
+	if elapsed := time.Since(started); elapsed > 10*time.Millisecond {
 		t.Errorf("background commits should happen nearly instantly")
 	}
 
@@ -1241,23 +1238,6 @@ func TestOffsetStash(t *testing.T) {
 			}
 		})
 	}
-}
-
-type mockOffsetCommitter struct {
-	invocations int
-	failCount   int
-	err         error
-}
-
-func (m *mockOffsetCommitter) offsetCommit(request offsetCommitRequestV2) (offsetCommitResponseV2, error) {
-	m.invocations++
-
-	if m.failCount > 0 {
-		m.failCount--
-		return offsetCommitResponseV2{}, io.EOF
-	}
-
-	return offsetCommitResponseV2{}, nil
 }
 
 func TestValidateReader(t *testing.T) {
@@ -1860,7 +1840,7 @@ func TestReaderReadCompactedMessage(t *testing.T) {
 	}
 }
 
-// writeMessagesForCompactionCheck writes messages with specific writer configuration
+// writeMessagesForCompactionCheck writes messages with specific writer configuration.
 func writeMessagesForCompactionCheck(t *testing.T, topic string, msgs []Message) {
 	t.Helper()
 
@@ -1919,7 +1899,7 @@ func makeTestDuplicateSequence() []Message {
 	return msgs
 }
 
-// countKeys counts unique keys from given Message slice
+// countKeys counts unique keys from given Message slice.
 func countKeys(msgs []Message) int {
 	m := make(map[string]struct{})
 	for _, msg := range msgs {
@@ -1960,13 +1940,10 @@ func createTopicWithCompaction(t *testing.T, topic string, partitions int) {
 			},
 		},
 	})
-	switch err {
-	case nil:
-		// ok
-	case TopicAlreadyExists:
-		// ok
-	default:
-		require.NoError(t, err)
+	if err != nil {
+		if !errors.Is(err, TopicAlreadyExists) {
+			require.NoError(t, err)
+		}
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

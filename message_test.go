@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -20,7 +21,7 @@ import (
 
 // This regression test covers reading messages using offsets that
 // are at the beginning and in the middle of compressed and uncompressed
-// v1 message sets
+// v1 message sets.
 func TestV1BatchOffsets(t *testing.T) {
 	const highWatermark = 5000
 	const topic = "test-topic"
@@ -551,7 +552,7 @@ func TestMessageSetReaderEmpty(t *testing.T) {
 	if headers != nil {
 		t.Errorf("expected nil headers, got %v", headers)
 	}
-	if err != RequestTimedOut {
+	if !errors.Is(err, RequestTimedOut) {
 		t.Errorf("expected RequestTimedOut, got %v", err)
 	}
 

@@ -468,9 +468,13 @@ The `Writer` will return an error if it detects this ambiguity.
 
 #### Sarama
 
-If you're switching from Sarama and need/want to use the same algorithm for message
-partitioning, you can use the ```kafka.Hash``` balancer.  ```kafka.Hash``` routes
-messages to the same partitions that Sarama's default partitioner would route to.
+If you're switching from Sarama and need/want to use the same algorithm for message partitioning, you can either use 
+the `kafka.Hash` balancer or the `kafka.ReferenceHash` balancer:
+* `kafka.Hash` = `sarama.NewHashPartitioner`
+* `kafka.ReferenceHash` = `sarama.NewReferenceHashPartitioner`
+
+The `kafka.Hash` and `kafka.ReferenceHash` balancers would route messages to the same partitions that the two 
+aforementioned Sarama partitioners would route them to.
 
 ```go
 w := &kafka.Writer{
@@ -669,7 +673,7 @@ if err != nil {
 // it's generally best to create a few of these and share them across your
 // application.
 sharedTransport := &kafka.Transport{
-    SASLMechanism: mechanism,
+    SASL: mechanism,
 }
 
 w := kafka.Writer{
@@ -692,7 +696,7 @@ if err != nil {
 // it's generally best to create a few of these and share them across your
 // application.
 sharedTransport := &kafka.Transport{
-    SASLMechanism: mechanism,
+    SASL: mechanism,
 }
 
 client := &kafka.Client{
